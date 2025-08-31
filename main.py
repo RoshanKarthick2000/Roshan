@@ -15,13 +15,17 @@ N_plot = st.sidebar.slider("Number of paths for plotting", 100, 1000, 500)
 N_analysis = st.sidebar.slider("Number of simulations for analysis", 1000, 50000, 10000, step=1000)
 target_price = st.sidebar.number_input("Target Price (INR)", value=300)
 
+# Scenario sliders
+mu_shock = st.sidebar.slider("Shock to Drift (μ)", -0.2, 0.2, 0.0, 0.01)
+sigma_shock = st.sidebar.slider("Shock to Volatility (σ)", -0.5, 0.5, 0.0, 0.05)
+
 # ----------------------------
 # Data Fetching Function
 # ----------------------------
 def fetch_data():
     # 1. Try Alpha Vantage
     try:
-        api_key = "8JDEF4YJXH27BFHY"  # ⚠️ You can replace with st.secrets["ALPHAVANTAGE_KEY"] for security
+        api_key = "8JDEF4YJXH27BFHY"  # Replace with st.secrets["ALPHAVANTAGE_KEY"] on Streamlit Cloud
         ts = TimeSeries(key=api_key, output_format="pandas")
         data, meta = ts.get_daily(symbol="TNPL.BSE", outputsize="full")
         data = data.rename(columns={"4. close": "Close"})
@@ -74,6 +78,10 @@ mu = float(np.mean(returns))
 sigma = float(np.std(returns))
 T = 252  # trading days in a year
 
+# Apply scenario shocks
+mu_adj = mu + mu_shock
+sigma_adj = sigma * (1 + sigma_shock)
+
 # ----------------------------
 # Monte Carlo Simulation
 # ----------------------------
@@ -85,9 +93,9 @@ def monte_carlo_simulation(S0, mu, sigma, T, N):
     price_paths[1:] = S0 * np.cumprod(daily_returns[1:], axis=0)
     return price_paths
 
-st.write("Running Monte Carlo simulations...")
-sim_plot = monte_carlo_simulation(S0, mu, sigma, T, N_plot)
-sim_analysis = monte_carlo_simulation(S0, mu, sigma, T, N_analysis)
+st.write("Running Monte Carlo simulations with scenario analysis...")
+sim_plot = monte_carlo_simulation(S0, mu_adj, sigma_adj, T, N_plot)
+sim_analysis = monte_carlo_simulation(S0, mu_adj, sigma_adj, T, N_analysis)
 
 # ----------------------------
 # Results
@@ -97,6 +105,7 @@ expected_price = final_prices.mean()
 std_dev = final_prices.std()
 prob_up = (final_prices > S0).mean() * 100
 VaR_95 = np.percentile(final_prices, 5)
+ES_95 = final_prices[final_prices <= VaR_95].mean()   # ✅ Expected Shortfall
 prob_target = (final_prices > target_price).mean() * 100
 
 st.subheader("Simulation Results")
@@ -105,16 +114,25 @@ st.write(f"**Expected Price after 1 Year:** {round(expected_price,2)} INR")
 st.write(f"**Std. Dev of Final Prices:** {round(std_dev,2)}")
 st.write(f"**Probability of Stock Going Up:** {round(prob_up,2)} %")
 st.write(f"**95% Value at Risk (VaR):** {round(VaR_95,2)} INR")
+st.write(f"**95% Expected Shortfall (CVaR):** {round(ES_95,2)} INR")
 st.write(f"**Probability TNPL > {target_price} INR:** {round(prob_target,2)} %")
 
 # ----------------------------
 # Plots
 # ----------------------------
-st.subheader("Spaghetti Plot (Digital Twin Paths)")
+st.subheader("Spaghetti Plot with Confidence Bands")
 fig, ax = plt.subplots(figsize=(10,5))
-ax.plot(sim_plot, color="skyblue", alpha=0.2)
+ax.plot(sim_plot, color="skyblue", alpha=0.1)
+
+# Mean path
 ax.plot(sim_plot.mean(axis=1), color="red", label="Expected Path")
-ax.set_title("Digital Twin of TNPL Stock")
+
+# Confidence interval bands
+lower_bound = np.percentile(sim_plot, 5, axis=1)
+upper_bound = np.percentile(sim_plot, 95, axis=1)
+ax.fill_between(range(T), lower_bound, upper_bound, color="orange", alpha=0.3, label="5%-95% Band")
+
+ax.set_title("Digital Twin of TNPL Stock with Scenario Shocks")
 ax.set_xlabel("Days")
 ax.set_ylabel("Price (INR)")
 ax.legend()
@@ -125,6 +143,7 @@ fig2, ax2 = plt.subplots(figsize=(8,5))
 ax2.hist(final_prices, bins=50, color="skyblue", edgecolor="black", alpha=0.7)
 ax2.axvline(expected_price, color="red", linestyle="dashed", linewidth=2, label="Mean Price")
 ax2.axvline(VaR_95, color="orange", linestyle="dashed", linewidth=2, label="95% VaR")
+ax2.axvline(ES_95, color="purple", linestyle="dashed", linewidth=2, label="95% ES")
 ax2.set_title("Distribution of TNPL Stock Prices (1 Year Ahead)")
 ax2.set_xlabel("Price (INR)")
 ax2.set_ylabel("Frequency")
@@ -138,6 +157,7 @@ fig3, ax3 = plt.subplots(figsize=(8,5))
 ax3.plot(sorted_prices, cdf, color="blue", label="CDF")
 ax3.axvline(expected_price, color="red", linestyle="dashed", label="Mean Price")
 ax3.axvline(VaR_95, color="orange", linestyle="dashed", label="95% VaR")
+ax3.axvline(ES_95, color="purple", linestyle="dashed", label="95% ES")
 ax3.set_title("CDF of TNPL Stock Prices (1 Year Ahead)")
 ax3.set_xlabel("Price (INR)")
 ax3.set_ylabel("Cumulative Probability")
@@ -171,38 +191,38 @@ if len(historical_returns) > 0:
     ax4.legend()
     st.pyplot(fig4)
 
-# ----------------------------
-# Kupiec Test
-# ----------------------------
-st.subheader("Kupiec Test for VaR Backtesting")
+    # ----------------------------
+    # Kupiec Test
+    # ----------------------------
+    st.subheader("Kupiec Test for VaR Backtesting")
 
-N = total_days
-x = int(exceedances)
-p = 0.05
-phat = x / N if N > 0 else 0.0001
+    N = total_days
+    x = int(exceedances)
+    p = 0.05
+    phat = x / N if N > 0 else 0.0001
 
-if N > 0 and x > 0:
-    try:
-        LR_pof = -2 * (
-            np.log(((1-p)**(N-x)) * (p**x)) -
-            np.log(((1-phat)**(N-x)) * (phat**x))
-        )
-        p_value = 1 - stats.chi2.cdf(LR_pof, df=1)
+    if N > 0 and x > 0:
+        try:
+            LR_pof = -2 * (
+                np.log(((1-p)**(N-x)) * (p**x)) -
+                np.log(((1-phat)**(N-x)) * (phat**x))
+            )
+            p_value = 1 - stats.chi2.cdf(LR_pof, df=1)
 
-        # Handle nan or inf results gracefully
-        if np.isnan(LR_pof) or np.isnan(p_value):
-            st.info("ℹ️ Kupiec Test not meaningful because observed exceedance ≈ expected (5%).")
-        else:
-            st.write(f"**Observed Exceedance Rate:** {round(phat*100,2)} %")
-            st.write(f"**Kupiec Test LR statistic:** {round(LR_pof,4)}")
-            st.write(f"**p-value:** {round(p_value,4)}")
-
-            if p_value > 0.05:
-                st.success("✅ Model not rejected — VaR exceedances are consistent with 95% confidence level.")
+            if np.isnan(LR_pof) or np.isnan(p_value):
+                st.info("ℹ️ Kupiec Test not meaningful because observed exceedance ≈ expected (5%).")
             else:
-                st.error("❌ Model rejected — exceedances deviate significantly from expected 5%.")
-    except Exception as e:
-        st.warning(f"Kupiec Test failed due to numerical issues: {e}")
-else:
-    st.warning("⚠️ Not enough data for Kupiec Test.")
+                st.write(f"**Observed Exceedance Rate:** {round(phat*100,2)} %")
+                st.write(f"**Kupiec Test LR statistic:** {round(LR_pof,4)}")
+                st.write(f"**p-value:** {round(p_value,4)}")
 
+                if p_value > 0.05:
+                    st.success("✅ Model not rejected — VaR exceedances are consistent with 95% confidence level.")
+                else:
+                    st.error("❌ Model rejected — exceedances deviate significantly from expected 5%.")
+        except Exception as e:
+            st.warning(f"Kupiec Test failed due to numerical issues: {e}")
+    else:
+        st.warning("⚠️ Not enough data for Kupiec Test.")
+else:
+    st.warning("⚠️ No historical returns for VaR validation.")
