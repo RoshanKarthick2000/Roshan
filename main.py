@@ -19,6 +19,11 @@ target_price = st.sidebar.number_input("Target Price (INR)", value=300)
 # ----------------------------
 st.write("Fetching TNPL stock data...")
 data = yf.download("TNPL.NS", start="2018-01-01", end="2025-01-01")
+
+if data.empty:
+    st.error("⚠️ No data fetched from Yahoo Finance. Please try again later or check the ticker symbol.")
+    st.stop()  # stop execution safely
+
 returns = data['Close'].pct_change().dropna().to_numpy()
 
 # Parameters
