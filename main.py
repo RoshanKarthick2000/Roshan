@@ -18,7 +18,7 @@ def fetch_data():
     # 2. Try Alpha Vantage (BSE) and rescale
     # ----------------------------
     try:
-        api_key = st.secrets["ALPHAVANTAGE_KEY"] if "ALPHAVANTAGE_KEY" in st.secrets else "YOUR_ALPHA_VANTAGE_API_KEY"
+        api_key = st.secrets["8JDEF4YJXH27BFHY"] if "8JDEF4YJXH27BFHY" in st.secrets else "8JDEF4YJXH27BFHY"
         ts = TimeSeries(key=api_key, output_format="pandas")
         data, meta = ts.get_daily(symbol="TNPL.BSE", outputsize="full")
 
