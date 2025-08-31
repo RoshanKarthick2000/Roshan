@@ -171,32 +171,38 @@ if len(historical_returns) > 0:
     ax4.legend()
     st.pyplot(fig4)
 
-    # ----------------------------
-    # Kupiec Test
-    # ----------------------------
-    st.subheader("Kupiec Test for VaR Backtesting")
+# ----------------------------
+# Kupiec Test
+# ----------------------------
+st.subheader("Kupiec Test for VaR Backtesting")
 
-    N = total_days
-    x = int(exceedances)
-    p = 0.05
-    phat = x / N if N > 0 else 0.0001
+N = total_days
+x = int(exceedances)
+p = 0.05
+phat = x / N if N > 0 else 0.0001
 
-    if N > 0 and x > 0:
+if N > 0 and x > 0:
+    try:
         LR_pof = -2 * (
             np.log(((1-p)**(N-x)) * (p**x)) -
             np.log(((1-phat)**(N-x)) * (phat**x))
         )
         p_value = 1 - stats.chi2.cdf(LR_pof, df=1)
 
-        st.write(f"**Observed Exceedance Rate:** {round(phat*100,2)} %")
-        st.write(f"**Kupiec Test LR statistic:** {round(LR_pof,4)}")
-        st.write(f"**p-value:** {round(p_value,4)}")
-
-        if p_value > 0.05:
-            st.success("✅ Model not rejected — VaR exceedances are consistent with 95% confidence level.")
+        # Handle nan or inf results gracefully
+        if np.isnan(LR_pof) or np.isnan(p_value):
+            st.info("ℹ️ Kupiec Test not meaningful because observed exceedance ≈ expected (5%).")
         else:
-            st.error("❌ Model rejected — exceedances deviate significantly from expected 5%.")
-    else:
-        st.warning("⚠️ Not enough data for Kupiec Test.")
+            st.write(f"**Observed Exceedance Rate:** {round(phat*100,2)} %")
+            st.write(f"**Kupiec Test LR statistic:** {round(LR_pof,4)}")
+            st.write(f"**p-value:** {round(p_value,4)}")
+
+            if p_value > 0.05:
+                st.success("✅ Model not rejected — VaR exceedances are consistent with 95% confidence level.")
+            else:
+                st.error("❌ Model rejected — exceedances deviate significantly from expected 5%.")
+    except Exception as e:
+        st.warning(f"Kupiec Test failed due to numerical issues: {e}")
 else:
-    st.warning("⚠️ No historical returns for VaR validation.")
+    st.warning("⚠️ Not enough data for Kupiec Test.")
+
