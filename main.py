@@ -1,13 +1,15 @@
 import yfinance as yf
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
 import scipy.stats as stats
+from alpha_vantage.timeseries import TimeSeries
 
 # ----------------------------
 # Title & Sidebar
 # ----------------------------
-st.title("📈 Digital Twin of TNPL Stock using Monte Carlo Simulation")
+st.title("Digital Twin of TNPL Stock using Monte Carlo Simulation")
 
 st.sidebar.header("Simulation Settings")
 N_plot = st.sidebar.slider("Number of paths for plotting", 100, 1000, 500)
@@ -15,27 +17,58 @@ N_analysis = st.sidebar.slider("Number of simulations for analysis", 1000, 50000
 target_price = st.sidebar.number_input("Target Price (INR)", value=300)
 
 # ----------------------------
-# Fetch TNPL stock data
+# Data Fetching Function
+# ----------------------------
+def fetch_data():
+    # Try Yahoo Finance
+    try:
+        data = yf.download("TNPL.NS", period="5y")
+        if not data.empty:
+            st.info("📡 Data Source: Yahoo Finance")
+            return data
+    except Exception as e:
+        st.warning(f"⚠️ Yahoo Finance failed: {e}")
+
+    # Try Alpha Vantage
+    try:
+        api_key = "8JDEF4YJXH27BFHY"  # Replace with your free API key
+        ts = TimeSeries(key=api_key, output_format="pandas")
+        data, meta = ts.get_daily(symbol="TNPL.BSE", outputsize="full")
+        data = data.rename(columns={"4. close": "Close"})
+        st.info("📡 Data Source: Alpha Vantage")
+        return data
+    except Exception as e:
+        st.warning(f"⚠️ Alpha Vantage failed: {e}")
+
+    # Fallback: CSV
+    try:
+        data = pd.read_csv("tnpl_data.csv", index_col=0, parse_dates=True)
+        st.info("📂 Data Source: Backup CSV")
+        return data
+    except Exception as e:
+        st.error(f"❌ No data available. Error: {e}")
+        st.stop()
+
+# ----------------------------
+# Load Data
 # ----------------------------
 st.write("Fetching TNPL stock data...")
-data = yf.download("TNPL.NS", start="2018-01-01", end="2025-01-01")
-data.to_csv("tnpl_data.csv")
+data = fetch_data()
 
-if data.empty:
-    st.warning("⚠️ Live data fetch failed. Loading backup CSV instead.")
-    import pandas as pd
-    data = pd.read_csv("tnpl_data.csv", index_col=0, parse_dates=True)
-
-returns = data['Close'].pct_change().dropna().to_numpy()
+# Safety check
+if data.empty or "Close" not in data.columns or data['Close'].dropna().empty:
+    st.error("❌ No valid stock price data available. Please check sources/CSV.")
+    st.stop()
 
 # Parameters
-S0 = float(data['Close'].iloc[-1])   
+S0 = float(data['Close'].dropna().iloc[-1])   
+returns = data['Close'].pct_change().dropna().to_numpy()
 mu = float(np.mean(returns))         
 sigma = float(np.std(returns))       
 T = 252                              
 
 # ----------------------------
-# Monte Carlo Function
+# Monte Carlo Simulation
 # ----------------------------
 def monte_carlo_simulation(S0, mu, sigma, T, N):
     Z = np.random.normal(size=(T, N))
@@ -45,9 +78,6 @@ def monte_carlo_simulation(S0, mu, sigma, T, N):
     price_paths[1:] = S0 * np.cumprod(daily_returns[1:], axis=0)
     return price_paths
 
-# ----------------------------
-# Run Simulations
-# ----------------------------
 st.write("Running Monte Carlo simulations...")
 sim_plot = monte_carlo_simulation(S0, mu, sigma, T, N_plot)
 sim_analysis = monte_carlo_simulation(S0, mu, sigma, T, N_analysis)
@@ -141,7 +171,7 @@ st.subheader("Kupiec Test for VaR Backtesting")
 
 N = total_days
 x = int(exceedances)
-p = 0.05  # expected 5% exceedance rate
+p = 0.05
 phat = x / N
 
 LR_pof = -2 * (
