@@ -19,10 +19,12 @@ target_price = st.sidebar.number_input("Target Price (INR)", value=300)
 # ----------------------------
 st.write("Fetching TNPL stock data...")
 data = yf.download("TNPL.NS", start="2018-01-01", end="2025-01-01")
+data.to_csv("tnpl_data.csv")
 
 if data.empty:
-    st.error("⚠️ No data fetched from Yahoo Finance. Please try again later or check the ticker symbol.")
-    st.stop()  # stop execution safely
+    st.warning("⚠️ Live data fetch failed. Loading backup CSV instead.")
+    import pandas as pd
+    data = pd.read_csv("tnpl_data.csv", index_col=0, parse_dates=True)
 
 returns = data['Close'].pct_change().dropna().to_numpy()
 
