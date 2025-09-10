@@ -4,3 +4,4 @@ matplotlib==3.9.0
 scipy==1.13.1
 streamlit==1.36.0
 alpha_vantage==2.3.1
+
